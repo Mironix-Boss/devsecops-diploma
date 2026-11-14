@@ -83,7 +83,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-    secrets:
+
+  secrets:
     name: Secrets scan (Gitleaks)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
