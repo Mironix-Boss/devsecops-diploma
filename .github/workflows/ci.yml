@@ -237,3 +237,59 @@ jobs:
         with:
           sarif_file: checkov/results_sarif.sarif
           category: checkov
+
+  sca:
+    name: SCA (Trivy fs + SBOM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      TRIVY_VERSION: 0.76.2
+      TRIVY_SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Generate lockfiles (project does not commit them)
+        run: |
+          npm install --package-lock-only --ignore-scripts --package-lock=true --no-audit --no-fund
+          cd frontend
+          npm install --package-lock-only --ignore-scripts --package-lock=true --legacy-peer-deps --no-audit --no-fund
+
+      - name: Install Trivy (checksum verified)
+        run: |
+          curl -sSLo trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum --check
+          tar -xzf trivy.tar.gz trivy
+          ./trivy --version
+
+      - name: Dependency scan (SARIF)
+        run: ./trivy fs --scanners vuln --format sarif --output trivy-fs.sarif .
+
+      - name: Summary (High/Critical)
+        run: ./trivy fs --scanners vuln --severity HIGH,CRITICAL --format table .
+
+      - name: Generate SBOM (CycloneDX)
+        run: ./trivy fs --format cyclonedx --output sbom.cdx.json .
+
+      - name: Upload to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Save SBOM as artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 30
