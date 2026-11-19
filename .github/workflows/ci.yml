@@ -188,3 +188,52 @@ jobs:
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: "/language:${{ matrix.language }}"
+
+  config-scan:
+    name: Config scan (Hadolint + Checkov)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      HADOLINT_VERSION: 2.15.1
+      HADOLINT_SHA256: c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
+      CHECKOV_VERSION: 3.4.6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Hadolint (checksum pinned)
+        run: |
+          curl -sSLo hadolint "https://github.com/hadolint/hadolint/releases/download/v${HADOLINT_VERSION}/hadolint-linux-x86_64"
+          echo "${HADOLINT_SHA256}  hadolint" | sha256sum --check
+          chmod +x hadolint
+
+      - name: Hadolint (Dockerfile)
+        run: ./hadolint Dockerfile --format sarif --no-fail > hadolint.sarif
+
+      - name: Install Checkov
+        run: pipx install "checkov==${CHECKOV_VERSION}"
+
+      - name: Checkov (Terraform, Dockerfile, GitHub Actions)
+        run: >
+          checkov -d .
+          --framework terraform dockerfile github_actions
+          --output cli --output sarif --output-file-path checkov
+          --soft-fail --compact --quiet
+
+      - name: Upload Hadolint results
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: hadolint.sarif
+          category: hadolint
+
+      - name: Upload Checkov results
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: checkov/results_sarif.sarif
+          category: checkov
