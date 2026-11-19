@@ -237,3 +237,49 @@ jobs:
         with:
           sarif_file: checkov/results_sarif.sarif
           category: checkov
+
+  image-scan:
+    name: Image scan (Trivy)
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      security-events: write
+    env:
+      TRIVY_VERSION: 0.76.2
+      TRIVY_SHA256: bc0fc726e017b8927a62b2d3531d7a84ee01769daf5c99ed866dced54089fdbf
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image locally (from cache)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: local/juice-shop:scan
+          cache-from: type=gha
+
+      - name: Install Trivy (checksum verified)
+        run: |
+          curl -sSLo trivy.tar.gz "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          echo "${TRIVY_SHA256}  trivy.tar.gz" | sha256sum --check
+          tar -xzf trivy.tar.gz trivy
+
+      - name: Image scan (SARIF)
+        run: ./trivy image --scanners vuln --format sarif --output trivy-image.sarif local/juice-shop:scan
+
+      - name: Summary (High/Critical)
+        run: ./trivy image --scanners vuln --severity HIGH,CRITICAL --format table local/juice-shop:scan
+
+      - name: Upload to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
