@@ -1,0 +1,8 @@
+#!/bin/sh
+# Блокирует коммит, если в проиндексированных изменениях найден секрет.
+GITLEAKS="$(command -v gitleaks || echo "$HOME/bin/gitleaks.exe")"
+if [ ! -x "$GITLEAKS" ]; then
+  echo "pre-commit: gitleaks не найден. Установите его (см. README)." >&2
+  exit 1
+fi
+exec "$GITLEAKS" git --pre-commit --staged --redact --no-banner .
