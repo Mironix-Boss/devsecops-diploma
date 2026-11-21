@@ -1,0 +1,74 @@
+name: DAST full
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dast-full
+  cancel-in-progress: false
+
+jobs:
+  zap-full:
+    name: ZAP full + API scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      ZAP_IMAGE: zaproxy/zap-stable:2.17.0@sha256:c2d63bbb2d907a5c5257914fb20e26e969c92b25f265def7f89f08203f912882
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image from cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: juice-shop:dast
+          cache-from: type=gha
+
+      - name: Start application
+        run: |
+          docker run -d --name app -p 127.0.0.1:3000:3000 juice-shop:dast
+          curl -fsS -o /dev/null --retry 30 --retry-delay 2 --retry-all-errors http://127.0.0.1:3000
+          mkdir -p zap && chmod 777 zap
+
+      - name: ZAP full scan (active)
+        run: |
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-full-scan.py -t http://127.0.0.1:3000 -j -m 5 -I \
+            -z "-config scanner.maxScanDurationInMins=60" \
+            -r full.html -J full.json -x full.xml
+
+      - name: ZAP API scan (OpenAPI)
+        if: always()
+        run: |
+          cp swagger.yml zap/
+          docker run --rm --network host -v "$PWD/zap:/zap/wrk:rw" "$ZAP_IMAGE" \
+            zap-api-scan.py -t /zap/wrk/swagger.yml -f openapi \
+            -O http://127.0.0.1:3000 -I \
+            -r api.html -J api.json -x api.xml
+
+      - name: Application logs (tail)
+        if: always()
+        run: docker logs --tail 50 app
+
+      - name: Upload ZAP reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dast-full
+          path: zap/
+          retention-days: 30
+
+      - name: Stop application
+        if: always()
+        run: docker rm -f app
