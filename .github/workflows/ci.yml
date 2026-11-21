@@ -150,6 +150,7 @@ jobs:
           --config p/nodejsscan
           --config p/owasp-top-ten
           --config p/smart-contracts
+          --config p/python
           --metrics=off
           --sarif --output semgrep.sarif
 
@@ -171,7 +172,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [javascript-typescript, actions]
+        language: [javascript-typescript, actions, python]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -425,3 +426,19 @@ jobs:
       - name: Stop application
         if: always()
         run: docker rm -f app
+
+  shell-lint:
+    name: Shell scripts (ShellCheck)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck
+        run: |
+          shellcheck --version
+          git ls-files -z '*.sh' .githooks/ | xargs -0 shellcheck -S warning -f gcc || true
