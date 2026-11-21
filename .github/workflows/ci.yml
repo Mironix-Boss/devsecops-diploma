@@ -339,3 +339,40 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+  deploy:
+    name: Deploy to production
+    needs: [build, image-scan]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: https://77-232-132-127.sslip.io
+    permissions:
+      contents: read
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Configure SSH (pinned host key)
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ vars.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Deploy image sha-${{ github.sha }}
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+        run: >
+          ssh -i ~/.ssh/deploy_key
+          -o StrictHostKeyChecking=yes -o BatchMode=yes
+          "deploy@${DEPLOY_HOST}" "sha-${GITHUB_SHA}"
+
+      - name: Remove key from runner
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
