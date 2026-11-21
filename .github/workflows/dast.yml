@@ -72,3 +72,59 @@ jobs:
       - name: Stop application
         if: always()
         run: docker rm -f app
+
+  nuclei:
+    name: Nuclei templates scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      NUCLEI_VERSION: 3.11.1
+      NUCLEI_SHA256: ea63d4ae232808cd7c6bc00d0142428e231fab59dae01042246097d195835ab6
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image from cache
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          push: false
+          tags: juice-shop:dast
+          cache-from: type=gha
+
+      - name: Start application
+        run: |
+          docker run -d --name app -p 127.0.0.1:3000:3000 juice-shop:dast
+          curl -fsS -o /dev/null --retry 30 --retry-delay 2 --retry-all-errors http://127.0.0.1:3000
+
+      - name: Install Nuclei (verified)
+        run: |
+          curl -fsSL -o nuclei.zip "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_amd64.zip"
+          echo "${NUCLEI_SHA256}  nuclei.zip" | sha256sum -c -
+          unzip -q nuclei.zip nuclei -d "$RUNNER_TEMP"
+          "$RUNNER_TEMP/nuclei" -version
+
+      - name: Nuclei scan
+        run: |
+          mkdir -p nuclei
+          "$RUNNER_TEMP/nuclei" -u http://127.0.0.1:3000 \
+            -severity low,medium,high,critical \
+            -exclude-tags dos,fuzz,intrusive \
+            -no-interactsh -rate-limit 50 -stats -silent \
+            -o nuclei/nuclei.txt -jsonl-export nuclei/nuclei.jsonl -sarif-export nuclei/nuclei.sarif
+
+      - name: Upload Nuclei report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dast-nuclei
+          path: nuclei/
+          retention-days: 30
+
+      - name: Stop application
+        if: always()
+        run: docker rm -f app
