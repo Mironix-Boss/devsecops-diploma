@@ -108,6 +108,11 @@ jobs:
           unzip -q nuclei.zip nuclei -d "$RUNNER_TEMP"
           "$RUNNER_TEMP/nuclei" -version
 
+      - name: Update Nuclei templates
+        run: |
+          "$RUNNER_TEMP/nuclei" -update-templates
+          "$RUNNER_TEMP/nuclei" -templates-version
+
       - name: Nuclei scan
         run: |
           mkdir -p nuclei
