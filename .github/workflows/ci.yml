@@ -161,6 +161,15 @@ jobs:
           sarif_file: semgrep.sarif
           category: semgrep
 
+      - name: Save Semgrep report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: semgrep-report
+          path: semgrep.sarif
+          retention-days: 30
+          if-no-files-found: error
+
   sast-codeql:
     name: SAST (CodeQL ${{ matrix.language }})
     runs-on: ubuntu-24.04
@@ -189,6 +198,16 @@ jobs:
         uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           category: "/language:${{ matrix.language }}"
+          output: codeql-results
+
+      - name: Save CodeQL report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: codeql-report-${{ matrix.language }}
+          path: codeql-results/*.sarif
+          retention-days: 30
+          if-no-files-found: error
 
   config-scan:
     name: Config scan (Hadolint + Checkov)
@@ -232,12 +251,30 @@ jobs:
           sarif_file: hadolint.sarif
           category: hadolint
 
+      - name: Save Hadolint report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: hadolint-report
+          path: hadolint.sarif
+          retention-days: 30
+          if-no-files-found: error
+
       - name: Upload Checkov results
         if: always()
         uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
         with:
           sarif_file: checkov/results_sarif.sarif
           category: checkov
+
+      - name: Save Checkov report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: checkov-report
+          path: checkov/results_sarif.sarif
+          retention-days: 30
+          if-no-files-found: error
 
   sca:
     name: SCA (Trivy fs + SBOM)
@@ -286,6 +323,15 @@ jobs:
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
+
+      - name: Save Trivy FS report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: trivy-fs-report
+          path: trivy-fs.sarif
+          retention-days: 30
+          if-no-files-found: error
 
       - name: Save SBOM as artifact
         if: always()
@@ -340,6 +386,15 @@ jobs:
         with:
           sarif_file: trivy-image.sarif
           category: trivy-image
+
+      - name: Save Trivy Image report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: trivy-image-report
+          path: trivy-image.sarif
+          retention-days: 30
+          if-no-files-found: error
 
   deploy:
     name: Deploy to production
@@ -442,3 +497,13 @@ jobs:
         run: |
           shellcheck --version
           git ls-files -z '*.sh' .githooks/ | xargs -0 shellcheck -S warning -f gcc || true
+          git ls-files -z '*.sh' .githooks/ | xargs -0 shellcheck -S warning -f json > shellcheck.json || true
+
+      - name: Save ShellCheck report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: shellcheck-report
+          path: shellcheck.json
+          retention-days: 30
+          if-no-files-found: error
